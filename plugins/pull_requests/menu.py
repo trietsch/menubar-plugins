@@ -1,9 +1,11 @@
 import itertools
+from collections import Counter
 from typing import List, Dict
 
 from .config import PullRequestsConstants
 from .domain import PullRequest, PullRequestSort, PullRequestStatus, PullRequestsOverview, PullRequestException
 from .notification import send_notification_pr
+from common.charts import status_pie_chart_base64
 from common.config import get_logger
 from common.icons import Icon, Icons
 from common.util import get_absolute_path_to_repo_file
@@ -15,20 +17,8 @@ open_multiple_urls = get_absolute_path_to_repo_file('plugins/open-multiple-urls.
 def sort_pull_requests(pull_requests: List[PullRequest], sort_on: PullRequestSort):
     return sorted(pull_requests, key=lambda p: p.activity,
                   reverse=True) if sort_on == PullRequestSort.ACTIVITY else sorted(pull_requests,
-                                                                                   key=lambda p: p['title'])
+                                                                                   key=lambda p: p.title)
 
-
-def determine_repo_status(prs_list: List[PullRequest]):
-    statuses = [_pr.overall_status for _pr in prs_list]
-
-    if PullRequestStatus.REJECTED in statuses:
-        return PullRequestStatus.REJECTED
-    elif PullRequestStatus.UNAPPROVED in statuses or PullRequestStatus.NO_VOTE in statuses:
-        return PullRequestStatus.UNAPPROVED
-    elif PullRequestStatus.NEEDS_WORK in statuses or PullRequestStatus.WAITING_FOR_AUTHOR in statuses:
-        return PullRequestStatus.NEEDS_WORK
-    else:  # Approved / Approved with suggestions
-        return PullRequestStatus.APPROVED
 
 
 def print_prs(
@@ -54,9 +44,9 @@ def print_prs(
 
     for repo, repo_prs in itertools.groupby(prs_sorted_by_slug, key=lambda p: p.slug):
         repo_prs_list: List[PullRequest] = list(repo_prs)
-        repo_status = determine_repo_status(repo_prs_list)
         repo_href = repo_prs_list[0].all_prs_href
-        print(f"{repo} ({str(len(repo_prs_list))}) | href={repo_href} image={status_icons[repo_status].base64_image}")
+        repo_icon = status_pie_chart_base64(Counter(pr.overall_status for pr in repo_prs_list))
+        print(f"{repo} ({str(len(repo_prs_list))}) | href={repo_href} image={repo_icon}")
 
         prs_sorted_by_to_ref = sorted(repo_prs_list, key=lambda p: p.to_ref)
 
@@ -77,7 +67,7 @@ def print_prs(
         print(
             (f"{repo} (open {str(len(repo_prs_list))} PRs) |"
              "alternate=true "
-             f"image={status_icons[repo_status].base64_image} "
+             f"image={repo_icon} "
              f"bash={open_multiple_urls} param1='{' '.join(pr_urls)}' "
              "terminal=false"
              )
